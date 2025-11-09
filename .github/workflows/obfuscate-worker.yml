@@ -1,0 +1,83 @@
+name: Obfuscate Worker
+
+on:
+  schedule:
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'worker.src.js'
+
+jobs:
+  obfuscate-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install obfuscator
+        run: npm install javascript-obfuscator
+
+      - name: Obfuscate worker code
+        run: |
+          set -e
+          [ -f "worker.src.js" ] && [ -s "worker.src.js" ] || exit 1
+          node -e "
+            const fs = require('fs');
+            try {
+              const code = fs.readFileSync('worker.src.js', 'utf8');
+              const result = require('javascript-obfuscator').obfuscate(code, {
+                compact: true,
+                controlFlowFlattening: false,
+                controlFlowFlatteningThreshold: 0,
+                deadCodeInjection: false,
+                stringArray: true,
+                stringArrayEncoding: ['base64'],
+                stringArrayThreshold: 1.0,
+                stringArrayRotate: true,
+                stringArrayShuffle: true,
+                stringArrayWrappersCount: 2,
+                stringArrayWrappersChainedCalls: false,
+                stringArrayWrappersParametersMaxCount: 3,
+                renameGlobals: true,
+                identifierNamesGenerator: 'mangled-shuffled',
+                identifierNamesCache: null,
+                identifiersPrefix: '',
+                renameProperties: false,
+                renamePropertiesMode: 'safe',
+                ignoreImports: false,
+                target: 'browser',
+                numbersToExpressions: false,
+                simplify: false,
+                splitStrings: true,
+                splitStringsChunkLength: 1,
+                transformObjectKeys: false,
+                unicodeEscapeSequence: true,
+                selfDefending: false,
+                debugProtection: false,
+                debugProtectionInterval: 0,
+                disableConsoleOutput: true,
+                domainLock: [],
+                seed: Date.now()
+              });
+              fs.writeFileSync('worker.js', result.getObfuscatedCode());
+            } catch(e) { process.exit(1) }
+          "
+
+      - name: Commit obfuscated file
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add worker.js
+          git commit -m "chore: auto-obfuscate worker.js" || true
+          git push origin HEAD:main
